@@ -1,0 +1,29 @@
+[project]
+name = "abs-project"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "HUGO-ROCHA-MONDRAGON",email = "hugosrochamo@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy (>=2.3.3,<3.0.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "matplotlib (>=3.10.6,<4.0.0)",
+    "scipy (>=1.16.2,<2.0.0)",
+    "scikit-learn (>=1.7.2,<2.0.0)",
+    "statsmodels (>=0.14.5,<0.15.0)",
+    "black (>=25.9.0,<26.0.0)",
+    "isort (>=6.1.0,<7.0.0)",
+    "flake8 (>=7.3.0,<8.0.0)",
+    "jupyter (>=1.1.1,<2.0.0)",
+    "xlsxwriter (>=3.2.9,<4.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "abs_project", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
