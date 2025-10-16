@@ -1,0 +1,47 @@
+deal:
+  deal_name: AUTOFR 2021-2
+  issuer: BNP Paribas Personal Finance
+  start_date: '2025-01-01'
+  frequency: Monthly
+  periods: 48
+  currency: EUR
+  benchmark_curve: EURIBOR_3M
+  day_count: ACT/360
+pool:
+  balance: 146000000
+  coupon_annual: 0.0259
+  amortization: pass_through
+  seasoning_months: 2
+  weighted_avg_maturity: 49
+  weighted_avg_rate: 0.0277
+structure:
+  waterfall:
+    type: sequential
+  tranches:
+  - name: A
+    type: floating
+    notional: 118240142.53
+    price: 99.3
+    legal_final: 60
+    rating: AAA
+    spread_bps: 128
+  - name: B
+    type: floating
+    notional: 15638971.46
+    price: 96.79
+    legal_final: 60
+    rating: A
+    spread_bps: 197
+  - name: C
+    type: fixed
+    notional: 7740886.01
+    price: 95.61
+    legal_final: 72
+    rating: BB+
+    coupon_annual: 0.0594
+  - name: Equity
+    type: residual
+    notional: 4380000.0
+    price: 96.47
+    legal_final: 60
+    rating: NR

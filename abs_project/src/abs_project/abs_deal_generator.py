@@ -163,7 +163,7 @@ if __name__ == "__main__":
     abs_deal = generate_abs_deal()
 
     # Optionnel : sauvegarde YAML lisible
-    with open("random_abs_deal.yaml", "w") as f:
+    with open("lolazo.yaml", "w") as f:
         yaml.dump(abs_deal, f, sort_keys=False)
 
     export_to_excel(abs_deal)
