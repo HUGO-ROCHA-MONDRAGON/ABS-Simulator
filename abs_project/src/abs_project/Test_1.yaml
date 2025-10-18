@@ -1,0 +1,47 @@
+deal:
+  deal_name: AUTOFR 2021-3
+  issuer: "Cr\xE9dit Agricole Consumer Finance"
+  start_date: '2025-01-01'
+  frequency: Monthly
+  periods: 72
+  currency: EUR
+  benchmark_curve: EURIBOR_1M
+  day_count: ACT/360
+pool:
+  balance: 112000000
+  coupon_annual: 0.0565
+  amortization: pass_through
+  seasoning_months: 1
+  weighted_avg_maturity: 61
+  weighted_avg_rate: 0.0585
+structure:
+  waterfall:
+    type: sequential
+  tranches:
+  - name: A
+    type: floating
+    notional: 86177547.83
+    price: 100.82
+    legal_final: 72
+    rating: AAA
+    spread_bps: 84
+  - name: B
+    type: floating
+    notional: 9006136.37
+    price: 98.39
+    legal_final: 72
+    rating: A
+    spread_bps: 164
+  - name: C
+    type: floating
+    notional: 5557341.67
+    price: 97.05
+    legal_final: 48
+    rating: BB+
+    spread_bps: 301
+  - name: Equity
+    type: residual
+    notional: 11258974.13
+    price: 95.2
+    legal_final: 48
+    rating: NR

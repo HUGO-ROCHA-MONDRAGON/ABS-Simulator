@@ -87,7 +87,6 @@ def random_passive_structure(pool_balance):
     share_B = random.uniform(0.05, 0.12)
     share_C = random.uniform(0.02, 0.06)
 
-    # Normalisation si besoin (laisser un minimum pour Equity)
     total = share_A + share_B + share_C
     if total > 0.97:
         factor = 0.97 / total
@@ -101,10 +100,36 @@ def random_passive_structure(pool_balance):
     notional_C = round(pool_balance * share_C, 2)
     notional_E = round(pool_balance - (notional_A + notional_B + notional_C), 2)
 
+    # --- Generate consistent spreads and prices ---
+    # Spread_A < Spread_B < Spread_C
+    spread_A = random.randint(80, 130)
+    spread_B = spread_A + random.randint(40, 80)
+    spread_C = spread_B + random.randint(80, 150)
+
+    # Price_A > Price_B > Price_C
+    price_A = round(random.uniform(100, 101), 2)
+    price_B = round(random.uniform(97, price_A - 0.5), 2)
+    price_C = round(random.uniform(94, price_B - 0.5), 2)
+
     # Création des tranches
-    tranche_A = random_tranche("A", "floating", pool_balance, notional_A)
-    tranche_B = random_tranche("B", random.choice(["fixed", "floating"]), pool_balance, notional_B)
-    tranche_C = random_tranche("C", random.choice(["fixed", "floating"]), pool_balance, notional_C)
+    tranche_A = {
+        **random_tranche("A", "floating", pool_balance, notional_A),
+        "spread_bps": spread_A,
+        "price": price_A
+    }
+
+    tranche_B = {
+        **random_tranche("B", "floating", pool_balance, notional_B),
+        "spread_bps": spread_B,
+        "price": price_B
+    }
+
+    tranche_C = {
+        **random_tranche("C", "floating", pool_balance, notional_C),
+        "spread_bps": spread_C,
+        "price": price_C
+    }
+
     tranche_E = random_tranche("Equity", "residual", pool_balance, notional_E)
 
     return {
@@ -154,16 +179,3 @@ def export_to_excel(abs_deal):
         ).to_excel(writer, sheet_name="Waterfall", index=False)
 
     print(f"✅ Excel file created: {file_name}")
-
-
-# ============================================================
-# 7️⃣ MAIN
-# ============================================================
-if __name__ == "__main__":
-    abs_deal = generate_abs_deal()
-
-    # Optionnel : sauvegarde YAML lisible
-    with open("lolazo.yaml", "w") as f:
-        yaml.dump(abs_deal, f, sort_keys=False)
-
-    export_to_excel(abs_deal)

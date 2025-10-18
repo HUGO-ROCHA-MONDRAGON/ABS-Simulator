@@ -8,15 +8,17 @@ import math
 # ---------------------------
 
 @dataclass
+@dataclass
 class DealMeta:
     deal_name: str
     issuer: str
-    start_date: str       # ISO string YYYY-MM-DD
-    frequency: str        # "Monthly"
-    periods: int          # number of months
+    start_date: str
+    frequency: str
+    periods: int
     currency: str
-    benchmark_curve: str  # e.g., "EURIBOR_3M"
-    day_count: str        # "ACT/360" (we use 1/12 simplification for now)
+    benchmark_curve: str
+    day_count: str
+    waterfall_type: str = "pro_rata"   # 👈 added default
 
 @dataclass
 class Pool:
@@ -26,7 +28,6 @@ class Pool:
     seasoning_months: int
     weighted_avg_maturity: int
     weighted_avg_rate: float
-
 
 @dataclass
 class Assumptions:
@@ -38,7 +39,6 @@ class Assumptions:
     servicing_fee_annual: float = 0.0
     senior_fees_annual: float = 0.0
     scenario_name: str = "Base"
-
 
 @dataclass
 class Tranche:
@@ -95,17 +95,18 @@ def bisection(f, lo, hi, tol=1e-8, maxit=100):
 
 class WaterfallEngine:
     """
-    Minimal engine:
+    Engine v1.1:
       - Collateral interest: pool_rate/12 * current_pool_balance
       - Scheduled principal: level pass-through (initial_balance / periods)
+      - CPR/CDR/prepays/defaults + recoveries with lag
+      - Fees (servicing + senior) deducted at collateral level
       - Waterfall:
           Interest: pay senior A -> B -> C (no shortfall carry here for v1)
           Principal: pro-rata across A/B/C by outstanding share
           Residual: all remaining cash (if any) to Equity
-      - No fees, no defaults/prepays (v1). Easy to add later.
     """
 
-    def __init__(self, deal: DealMeta, pool: Pool, tranches: List[Tranche], 
+    def __init__(self, deal: DealMeta, pool: Pool, tranches: List[Tranche],
                  assumptions: Assumptions, base_index_annual: float = 0.0):
         self.deal = deal
         self.pool = pool
@@ -116,52 +117,51 @@ class WaterfallEngine:
         self.periods = deal.periods
         self.collateral_balance = pool.balance
         self.initial_pool_balance = pool.balance
-        self.defaults_history = []  # <---- ADD THIS LINE
+        self.defaults_history = []  # to compute lagged recoveries
+
         # Storage
         self.pool_int = []
         self.pool_prin = []
         self.residual_cash = []
 
-    # -------- Collateral schedule (v1: level principal, no losses/prepays) --------
+    # -------- Collateral schedule --------
     def _collateral_period_cf(self, t: int) -> Tuple[float, float, float]:
         if self.collateral_balance <= 1e-8:
             return 0.0, 0.0, 0.0
 
         dt = self.dt
-        CPR_m = 1 - (1 - self.ass.CPR_annual) ** dt     # convert annual → monthly
+        CPR_m = 1 - (1 - self.ass.CPR_annual) ** dt     # annual -> monthly
         CDR_m = 1 - (1 - self.ass.CDR_annual) ** dt
 
         scheduled_prin = min(self.initial_pool_balance / self.periods, self.collateral_balance)
 
         # Defaults + Prepayments
         defaults = self.collateral_balance * CDR_m
-        prepays = (self.collateral_balance - defaults) * CPR_m
+        prepays  = max(self.collateral_balance - defaults, 0.0) * CPR_m
 
-        # Interest earned on surviving loans
+        # Interest on current balance (simple)
         interest = self.pool.coupon_annual * dt * self.collateral_balance
 
         # Reduce collateral balance
         total_prin = scheduled_prin + prepays + defaults
-        self.collateral_balance -= total_prin
+        self.collateral_balance = max(self.collateral_balance - total_prin, 0.0)
 
-        # Append defaults to history
+        # Defaults history for lagged recoveries
         self.defaults_history.append(defaults)
 
         # Recoveries (if lag applies)
         recov = 0.0
         if t > self.ass.recovery_lag_months:
             lag_index = t - self.ass.recovery_lag_months - 1
-            if lag_index < len(self.defaults_history):
+            if 0 <= lag_index < len(self.defaults_history):
                 recov = self.defaults_history[lag_index] * self.ass.recovery_rate
 
         # Fees (senior + servicing)
         fees = (self.ass.senior_fees_annual + self.ass.servicing_fee_annual) * dt * self.initial_pool_balance
 
-        # Net available CF
+        # Net available CF to liabilities
         available_cf = interest + total_prin + recov - fees
         return available_cf, interest, total_prin
-
-
 
     # -------- Liability calculations --------
     def _tranche_interest_due(self, tr: Tranche) -> float:
@@ -177,8 +177,7 @@ class WaterfallEngine:
     def _pay_interest_senior(self, cash_avail: float) -> float:
         # Senior order: A -> B -> C; Equity has no stated interest
         seniors = [tr for tr in self.tranches if tr.ttype != "residual"]
-        # sort by name A,B,C (simple; adapt if you add explicit seniority ranks)
-        seniors.sort(key=lambda x: x.name)
+        seniors.sort(key=lambda x: x.name)  # assumes A < B < C ...
         for tr in seniors:
             due = self._tranche_interest_due(tr)
             pay = min(cash_avail, due)
@@ -194,7 +193,6 @@ class WaterfallEngine:
         seniors = [tr for tr in self.tranches if tr.ttype != "residual" and tr.outstanding > 1e-8]
         total_outs = sum(tr.outstanding for tr in seniors)
         if total_outs <= 1e-8 or cash_avail <= 1e-8:
-            # append zeros
             for tr in self.tranches:
                 tr.cash_principal.append(0.0)
             return cash_avail
@@ -203,33 +201,55 @@ class WaterfallEngine:
             share = tr.outstanding / total_outs
             alloc = min(cash_avail * share, tr.outstanding)
             tr.cash_principal.append(alloc)
-        # residual tranche gets no principal
+
         for tr in self.tranches:
             if tr.ttype == "residual":
                 tr.cash_principal.append(0.0)
 
         used = sum(tr.cash_principal[-1] for tr in seniors)
         return cash_avail - used
+    
+    
+    def _pay_principal_sequential(self, cash_avail: float) -> float:
+        """Sequential principal: pay A → B → C fully before next tranche."""
+        seniors = [tr for tr in self.tranches if tr.ttype != "residual"]
+        seniors.sort(key=lambda x: x.name)
+        for tr in seniors:
+            if cash_avail <= 0:
+                tr.cash_principal.append(0.0)
+                continue
+            pay = min(tr.outstanding, cash_avail)
+            tr.cash_principal.append(pay)
+            cash_avail -= pay
+        # residual tranche
+        for tr in self.tranches:
+            if tr.ttype == "residual":
+                tr.cash_principal.append(0.0)
+        return cash_avail
+
 
     def simulate(self):
         for t in range(1, self.periods + 1):
-            # 1) Collateral cash
-            coll_int, coll_prin = self._collateral_period_cf(t)
+            # 1) Collateral cash (already net of fees and including recoveries)
+            available_cf, coll_int, coll_prin = self._collateral_period_cf(t)
             self.pool_int.append(coll_int)
             self.pool_prin.append(coll_prin)
-            self.collateral_balance -= coll_prin
-            available_cash = coll_int + coll_prin
+            available_cash = available_cf  # <-- do NOT subtract principal again
 
             # 2) Liabilities – Interest (senior)
             available_cash = self._pay_interest_senior(available_cash)
 
             # 3) Liabilities – Principal (pro-rata among debt tranches)
-            available_cash = self._pay_principal_prorata(available_cash)
+            # 3) Liabilities – Principal based on waterfall type
+            if getattr(self.deal, "waterfall_type", "pro_rata").lower() == "sequential":
+                available_cash = self._pay_principal_sequential(available_cash)
+            else:
+                available_cash = self._pay_principal_prorata(available_cash)
+
 
             # 4) Update tranche notionals
             for tr in self.tranches:
-                tr.outstanding -= tr.cash_principal[-1]
-                tr.outstanding = max(tr.outstanding, 0.0)
+                tr.outstanding = max(tr.outstanding - tr.cash_principal[-1], 0.0)
 
             # 5) Residual (equity)
             self.residual_cash.append(max(available_cash, 0.0))
@@ -260,7 +280,7 @@ class WaterfallEngine:
         dt = self.dt
         base = self.base_index_annual
 
-        # Build projected liability CFs (interest + principal actually paid)
+        # Liability CFs actually paid (interest + principal)
         cfs = [tr.cash_interest[i] + tr.cash_principal[i] for i in range(len(tr.cash_interest))]
 
         def pv_given_dm(dm_annual: float) -> float:
@@ -281,10 +301,7 @@ class WaterfallEngine:
     def results_summary(self) -> Dict[str, Dict[str, float]]:
         out = {}
         for tr in self.tranches:
-            if tr.ttype == "residual":
-                dm = float('nan')
-            else:
-                dm = self.tranche_DM_bps(tr)
+            dm = float('nan') if tr.ttype == "residual" else self.tranche_DM_bps(tr)
             out[tr.name] = {
                 "notional_start": tr.notional,
                 "notional_end": tr.outstanding,
@@ -293,16 +310,74 @@ class WaterfallEngine:
                 "int_total": sum(tr.cash_interest),
                 "prin_total": sum(tr.cash_principal),
             }
-        out["Equity_residual"] = {
-            "total_residual_cash": sum(self.residual_cash)
-        }
+        out["Equity_residual"] = {"total_residual_cash": sum(self.residual_cash)}
         return out
 
+# ============================
+# ===  PLOT IMPROVED CFs  ===
+# ============================
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+
+plt.style.use("seaborn-v0_8-whitegrid")  # cleaner base
+
+def build_waterfall_df(engine):
+    df = pd.DataFrame()
+    for tr in engine.tranches:
+        total_cf = [i + p for i, p in zip(tr.cash_interest, tr.cash_principal)]
+        df[tr.name] = total_cf
+    if hasattr(engine, "residual_cash") and len(engine.residual_cash) > 0:
+        df["Equity_residual"] = engine.residual_cash
+    df.index = range(1, len(df) + 1)
+    df.index.name = "Month"
+    return df
+
+# --- Improved stacked waterfall (looks like Intex) ---
+def plot_waterfall(engine):
+    df = build_waterfall_df(engine)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
+
+    ax.stackplot(df.index, [df[c] for c in df.columns],
+                 labels=df.columns, alpha=0.9, colors=colors[:len(df.columns)])
+    ax.set_title(f"Cashflow Waterfall — {engine.deal.deal_name}", fontsize=16, weight="bold")
+    ax.set_xlabel("Month", fontsize=12)
+    ax.set_ylabel("Monthly Cash Distribution (€)", fontsize=12)
+    ax.legend(loc="upper right", frameon=True, fontsize=10)
+    ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    plt.show()
+
+# --- Improved line plot (one curve per tranche) ---
+def plot_waterfall_lines(engine):
+    df = build_waterfall_df(engine)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
+
+    for i, col in enumerate(df.columns):
+        ax.plot(df.index, df[col], label=col, linewidth=2, color=colors[i % len(colors)])
+    ax.set_title(f"Tranche Cashflows — {engine.deal.deal_name}", fontsize=16, weight="bold")
+    ax.set_xlabel("Month", fontsize=12)
+    ax.set_ylabel("Monthly Cash (€)", fontsize=12)
+    ax.legend(loc="upper right", frameon=True, fontsize=10)
+    ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    plt.show()
+
+
 # ---------------------------
-# Loader from your YAML-like dict
+# Loader + Example main
 # ---------------------------
 
 def load_from_dict(d: Dict) -> Tuple[DealMeta, Pool, List[Tranche], Assumptions]:
+    wf_type = d.get("structure", {}).get("waterfall", {}).get("type", "pro_rata")
+
     deal = DealMeta(
         deal_name=d["deal"]["deal_name"],
         issuer=d["deal"]["issuer"],
@@ -312,7 +387,9 @@ def load_from_dict(d: Dict) -> Tuple[DealMeta, Pool, List[Tranche], Assumptions]
         currency=d["deal"]["currency"],
         benchmark_curve=d["deal"]["benchmark_curve"],
         day_count=d["deal"]["day_count"],
+        waterfall_type=wf_type,   # 👈 add here
     )
+
     pool = Pool(
         balance=float(d["pool"]["balance"]),
         coupon_annual=float(d["pool"]["coupon_annual"]),
@@ -321,115 +398,19 @@ def load_from_dict(d: Dict) -> Tuple[DealMeta, Pool, List[Tranche], Assumptions]
         weighted_avg_maturity=int(d["pool"]["weighted_avg_maturity"]),
         weighted_avg_rate=float(d["pool"]["weighted_avg_rate"]),
     )
-    tranches = []
-    for t in d["structure"]["tranches"]:
-        tranches.append(
-            Tranche(
-                name=t["name"],
-                ttype=t["type"],
-                notional=float(t["notional"]),
-                price=float(t["price"]),
-                legal_final=int(t["legal_final"]),
-                rating=t["rating"],
-                spread_bps=int(t.get("spread_bps", 0)),
-            )
+
+    tranches = [
+        Tranche(
+            name=t["name"],
+            ttype=t["type"],
+            notional=float(t["notional"]),
+            price=float(t["price"]),
+            legal_final=int(t["legal_final"]),
+            rating=t["rating"],
+            spread_bps=int(t.get("spread_bps", 0)),
         )
+        for t in d["structure"]["tranches"]
+    ]
+
     assumptions = Assumptions(**d.get("assumptions", {}))
     return deal, pool, tranches, assumptions
-
-
-
-
-# ---------------------------
-# Example usage
-# ---------------------------
-
-if __name__ == "__main__":
-    # Paste your dict here (converted from YAML). Example:
-    data = {
-        "deal": {
-            "deal_name": "AUTOFR 2022-1",
-            "issuer": "BNP Paribas Personal Finance",
-            "start_date": "2025-01-01",
-            "frequency": "Monthly",
-            "periods": 72,
-            "currency": "EUR",
-            "benchmark_curve": "EURIBOR_3M",
-            "day_count": "ACT/360",
-        },
-        "pool": {
-            "balance": 142000000,
-            "coupon_annual": 0.0341,
-            "amortization": "pass_through",
-            "seasoning_months": 10,
-            "weighted_avg_maturity": 71,
-            "weighted_avg_rate": 0.0351,
-        },
-        "structure": {
-            "waterfall": {"type": "pro_rata"},
-            "tranches": [
-                {"name": "A", "type": "floating", "notional": 112062125.65, "price": 100.09, "legal_final": 48, "rating": "AAA", "spread_bps": 193},
-                {"name": "B", "type": "floating", "notional": 10804048.51, "price": 97.91, "legal_final": 48, "rating": "A", "spread_bps": 198},
-                {"name": "C", "type": "floating", "notional": 5312690.76, "price": 99.89, "legal_final": 72, "rating": "BB+", "spread_bps": 147},
-                {"name": "Equity", "type": "residual", "notional": 13821135.08, "price": 98.18, "legal_final": 72, "rating": "NR"},
-            ],
-        },
-    }
-
-deal, pool, tranches, ass = load_from_dict(data)
-engine = WaterfallEngine(deal, pool, tranches, ass, base_index_annual=0.026)
-engine.simulate()
-summary = engine.results_summary()
-
-
-# ============================
-# ===  PLOT WATERFALL CFs  ===
-# ============================
-
-import pandas as pd
-import matplotlib.pyplot as plt
-
-# --- Build DataFrame of monthly CFs per tranche ---
-def build_waterfall_df(engine):
-    df = pd.DataFrame()
-    for tr in engine.tranches:
-        total_cf = [i + p for i, p in zip(tr.cash_interest, tr.cash_principal)]
-        df[tr.name] = total_cf
-    # add equity residual if exists
-    if hasattr(engine, "residual_cash") and len(engine.residual_cash) > 0:
-        df["Equity_residual"] = engine.residual_cash
-    df.index = range(1, len(df) + 1)
-    df.index.name = "Month"
-    return df
-
-# --- Generate the plot ---
-def plot_waterfall(engine):
-    df = build_waterfall_df(engine)
-    plt.figure(figsize=(10, 6))
-    plt.stackplot(df.index, [df[c] for c in df.columns],
-                  labels=df.columns, alpha=0.8)
-    plt.title(f"Cashflow Waterfall — {engine.deal.deal_name}", fontsize=14, fontweight="bold")
-    plt.xlabel("Month")
-    plt.ylabel("Monthly Cash Distribution (€)")
-    plt.legend(loc="upper right")
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-# --- Run ---
-plot_waterfall(engine)
-
-def plot_waterfall_lines(engine):
-    df = build_waterfall_df(engine)
-    plt.figure(figsize=(10,6))
-    for col in df.columns:
-        plt.plot(df.index, df[col], label=col, linewidth=1.8)
-    plt.title(f"Tranche Cashflows — {engine.deal.deal_name}", fontsize=14, fontweight="bold")
-    plt.xlabel("Month")
-    plt.ylabel("Monthly Cash (€)")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-plot_waterfall_lines(engine)
