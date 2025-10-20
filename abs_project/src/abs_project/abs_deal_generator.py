@@ -179,3 +179,25 @@ def export_to_excel(abs_deal):
         ).to_excel(writer, sheet_name="Waterfall", index=False)
 
     print(f"✅ Excel file created: {file_name}")
+
+# ============================================================
+# 7️⃣ EXPORT YAML
+# ============================================================
+def export_to_yaml(abs_deal):
+    deal_name = abs_deal["deal"]["deal_name"].replace(" ", "_")
+    output_dir = Path(__file__).resolve().parents[1] / "data" / "deals"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    file_name = output_dir / f"{deal_name}.yaml"
+
+    with open(file_name, "w") as f:
+        yaml.dump(abs_deal, f, sort_keys=False, allow_unicode=True)
+
+    print(f"✅ YAML file created: {file_name}")
+    return file_name
+
+
+if __name__ == "__main__":
+    abs_deal = generate_abs_deal()
+    path_yaml = export_to_yaml(abs_deal)
+    export_to_excel(abs_deal)
+    print(f"\n📁 Deal successfully generated at: {path_yaml}")

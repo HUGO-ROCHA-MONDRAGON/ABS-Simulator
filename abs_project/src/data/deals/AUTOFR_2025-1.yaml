@@ -1,0 +1,47 @@
+deal:
+  deal_name: AUTOFR 2025-1
+  issuer: Crédit Agricole Consumer Finance
+  start_date: '2025-01-01'
+  frequency: Monthly
+  periods: 60
+  currency: EUR
+  benchmark_curve: EURIBOR_1M
+  day_count: ACT/360
+pool:
+  balance: 137000000
+  coupon_annual: 0.0456
+  amortization: pass_through
+  seasoning_months: 6
+  weighted_avg_maturity: 67
+  weighted_avg_rate: 0.046
+structure:
+  waterfall:
+    type: sequential
+  tranches:
+  - name: A
+    type: floating
+    notional: 114703734.82
+    price: 100.28
+    legal_final: 48
+    rating: AAA
+    spread_bps: 88
+  - name: B
+    type: floating
+    notional: 10439010.43
+    price: 99.7
+    legal_final: 72
+    rating: A
+    spread_bps: 139
+  - name: C
+    type: floating
+    notional: 7747254.75
+    price: 97.46
+    legal_final: 60
+    rating: BB+
+    spread_bps: 236
+  - name: Equity
+    type: residual
+    notional: 4110000.0
+    price: 100.15
+    legal_final: 60
+    rating: NR

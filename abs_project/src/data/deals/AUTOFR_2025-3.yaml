@@ -1,0 +1,47 @@
+deal:
+  deal_name: AUTOFR 2025-3
+  issuer: RCI Banque
+  start_date: '2025-01-01'
+  frequency: Monthly
+  periods: 48
+  currency: EUR
+  benchmark_curve: EURIBOR_1M
+  day_count: ACT/360
+pool:
+  balance: 125000000
+  coupon_annual: 0.0297
+  amortization: pass_through
+  seasoning_months: 9
+  weighted_avg_maturity: 45
+  weighted_avg_rate: 0.0294
+structure:
+  waterfall:
+    type: sequential
+  tranches:
+  - name: A
+    type: floating
+    notional: 101352192.16
+    price: 100.47
+    legal_final: 48
+    rating: AAA
+    spread_bps: 127
+  - name: B
+    type: floating
+    notional: 9361737.81
+    price: 97.04
+    legal_final: 60
+    rating: A
+    spread_bps: 182
+  - name: C
+    type: floating
+    notional: 6586191.33
+    price: 94.44
+    legal_final: 72
+    rating: BB+
+    spread_bps: 299
+  - name: Equity
+    type: residual
+    notional: 7699878.7
+    price: 97.3
+    legal_final: 72
+    rating: NR

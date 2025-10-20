@@ -1,0 +1,47 @@
+deal:
+  deal_name: AUTOFR 2023-3
+  issuer: Santander Consumer France
+  start_date: '2025-01-01'
+  frequency: Monthly
+  periods: 72
+  currency: EUR
+  benchmark_curve: EURIBOR_3M
+  day_count: ACT/360
+pool:
+  balance: 109000000
+  coupon_annual: 0.0362
+  amortization: level_payment
+  seasoning_months: 2
+  weighted_avg_maturity: 39
+  weighted_avg_rate: 0.0389
+structure:
+  waterfall:
+    type: sequential
+  tranches:
+  - name: A
+    type: floating
+    notional: 89266689.77
+    price: 100.43
+    legal_final: 48
+    rating: AAA
+    spread_bps: 114
+  - name: B
+    type: floating
+    notional: 7159877.39
+    price: 98.12
+    legal_final: 48
+    rating: A
+    spread_bps: 163
+  - name: C
+    type: floating
+    notional: 4817717.04
+    price: 95.19
+    legal_final: 48
+    rating: BB+
+    spread_bps: 288
+  - name: Equity
+    type: residual
+    notional: 7755715.8
+    price: 99.85
+    legal_final: 60
+    rating: NR
