@@ -4,9 +4,19 @@ import matplotlib.pyplot as plt
 from .engine import WaterfallEngine, Assumptions
 from .loader import load_from_dict
 from .plots import plot_waterfall
+from typing import Callable, Optional
 
 
-def run_scenarios(abs_data, scenario_list, base_index_annual=0.026, plot=False):
+
+
+def run_scenarios(
+    abs_data,
+    scenario_list,
+    base_index_annual: float = 0.026,
+    curve_fn: Optional[Callable[[float], float]] = None,
+    plot: bool = False,
+):
+
     """
     Runs multiple scenarios on the same ABS deal and returns a summary DataFrame.
     
@@ -17,18 +27,32 @@ def run_scenarios(abs_data, scenario_list, base_index_annual=0.026, plot=False):
     scenario_list : list[Assumptions]
         List of Assumptions objects to run.
     base_index_annual : float, optional
-        Base index rate (e.g., EURIBOR), by default 0.026.
+        Base flat index rate (e.g. EURIBOR), by default 0.026.
+    curve_fn : callable(yf) -> float, optional
+        Function returning EURIBOR rate as a function of year fraction (yf).
+        If provided, overrides base_index_annual for term-structure discounting.
     plot : bool, optional
         Whether to plot the waterfall for each scenario.
     """
     results = []
 
     for ass in scenario_list:
+        # --- Reload deal structure fresh each run ---
         deal, pool, tranches, _ = load_from_dict(abs_data)
-        engine = WaterfallEngine(deal, pool, tranches, ass, base_index_annual)
-        engine.simulate()
 
+        # --- Create engine with curve support ---
+        engine = WaterfallEngine(
+            deal=deal,
+            pool=pool,
+            tranches=tranches,
+            assumptions=ass,
+            base_index_annual=base_index_annual,
+            curve_fn=curve_fn,                     # 👈 NEW
+        )
+
+        engine.simulate()
         summary = engine.results_summary()
+
         for tr_name, metrics in summary.items():
             row = {
                 "Scenario": ass.scenario_name,
@@ -56,6 +80,7 @@ def run_scenarios(abs_data, scenario_list, base_index_annual=0.026, plot=False):
 
     df = pd.DataFrame(results)
     return df
+
 
 
 def style_results(df: pd.DataFrame):

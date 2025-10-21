@@ -1,0 +1,47 @@
+deal:
+  deal_name: AUTOFR 2024-3
+  issuer: Crédit Agricole Consumer Finance
+  start_date: '2025-01-01'
+  frequency: Monthly
+  periods: 60
+  currency: EUR
+  benchmark_curve: EURIBOR_1M
+  day_count: ACT/360
+pool:
+  balance: 86000000
+  coupon_annual: 0.0517
+  amortization: level_payment
+  seasoning_months: 11
+  weighted_avg_maturity: 52
+  weighted_avg_rate: 0.0552
+structure:
+  waterfall:
+    type: pro_rata
+  tranches:
+  - name: A
+    type: floating
+    notional: 68571814.33
+    price: 100.05
+    legal_final: 72
+    rating: AAA
+    spread_bps: 90
+  - name: B
+    type: floating
+    notional: 4704425.63
+    price: 98.02
+    legal_final: 48
+    rating: A
+    spread_bps: 136
+  - name: C
+    type: floating
+    notional: 1786982.74
+    price: 94.01
+    legal_final: 48
+    rating: BB+
+    spread_bps: 222
+  - name: Equity
+    type: residual
+    notional: 10936777.3
+    price: 98.41
+    legal_final: 48
+    rating: NR

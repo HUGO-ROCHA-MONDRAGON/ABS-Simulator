@@ -1,6 +1,6 @@
 deal:
   deal_name: AUTOFR 2025-3
-  issuer: RCI Banque
+  issuer: Santander Consumer France
   start_date: '2025-01-01'
   frequency: Monthly
   periods: 48
@@ -8,40 +8,40 @@ deal:
   benchmark_curve: EURIBOR_1M
   day_count: ACT/360
 pool:
-  balance: 125000000
-  coupon_annual: 0.0297
-  amortization: pass_through
-  seasoning_months: 9
-  weighted_avg_maturity: 45
-  weighted_avg_rate: 0.0294
+  balance: 99000000
+  coupon_annual: 0.0389
+  amortization: level_payment
+  seasoning_months: 5
+  weighted_avg_maturity: 46
+  weighted_avg_rate: 0.0424
 structure:
   waterfall:
-    type: sequential
+    type: pro_rata
   tranches:
   - name: A
     type: floating
-    notional: 101352192.16
-    price: 100.47
-    legal_final: 48
+    notional: 82032962.91
+    price: 100.62
+    legal_final: 60
     rating: AAA
-    spread_bps: 127
+    spread_bps: 116
   - name: B
     type: floating
-    notional: 9361737.81
-    price: 97.04
-    legal_final: 60
+    notional: 9679289.56
+    price: 99.07
+    legal_final: 48
     rating: A
-    spread_bps: 182
+    spread_bps: 188
   - name: C
     type: floating
-    notional: 6586191.33
-    price: 94.44
-    legal_final: 72
+    notional: 4317747.52
+    price: 98.0
+    legal_final: 60
     rating: BB+
-    spread_bps: 299
+    spread_bps: 287
   - name: Equity
     type: residual
-    notional: 7699878.7
-    price: 97.3
-    legal_final: 72
+    notional: 2970000.01
+    price: 100.93
+    legal_final: 60
     rating: NR
